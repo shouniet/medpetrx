@@ -47,11 +47,23 @@ class ReviewedProblem(BaseModel):
     notes: str | None = None
 
 
+class ReviewedVital(BaseModel):
+    decision: FieldDecision
+    recorded_date: date | None = None
+    weight_kg: float | None = None
+    weight_lbs: float | None = None
+    temperature_f: float | None = None
+    heart_rate_bpm: int | None = None
+    respiratory_rate: int | None = None
+    notes: str | None = None
+
+
 class ExtractionReviewSubmit(BaseModel):
     medications: list[ReviewedMedication] = []
     vaccines: list[ReviewedVaccine] = []
     allergies: list[ReviewedAllergy] = []
     problems: list[ReviewedProblem] = []
+    vitals: list[ReviewedVital] = []
 
 
 class ConfirmResponse(BaseModel):
@@ -59,4 +71,5 @@ class ConfirmResponse(BaseModel):
     vaccines_saved: int
     allergies_saved: int
     problems_saved: int
+    vitals_saved: int = 0
     allergy_warnings: list[dict] = []

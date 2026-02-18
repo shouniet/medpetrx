@@ -12,6 +12,7 @@ from app.models.pet import Pet
 from app.models.problem import Problem
 from app.models.user import User
 from app.models.vaccine import Vaccine
+from app.models.vital import Vital
 from app.routers.pets import get_pet_for_owner
 from app.schemas.extraction_review import (
     ConfirmResponse,
@@ -132,6 +133,23 @@ async def confirm_extraction(
         db.add(problem)
         prob_saved += 1
 
+    # Save approved/edited vitals
+    for item in review.vitals:
+        if item.decision == FieldDecision.REJECTED:
+            continue
+        vital = Vital(
+            pet_id=pet_id,
+            recorded_date=_to_dt(item.recorded_date) or datetime.utcnow(),
+            weight_kg=item.weight_kg,
+            weight_lbs=item.weight_lbs,
+            temperature_f=item.temperature_f,
+            heart_rate_bpm=item.heart_rate_bpm,
+            respiratory_rate=item.respiratory_rate,
+            notes=item.notes,
+        )
+        db.add(vital)
+        vitals_saved += 1
+
     await db.commit()
     await create_audit_log(
         db,
@@ -147,5 +165,6 @@ async def confirm_extraction(
         vaccines_saved=vax_saved,
         allergies_saved=allergy_saved,
         problems_saved=prob_saved,
+        vitals_saved=vitals_saved,
         allergy_warnings=allergy_warnings,
     )

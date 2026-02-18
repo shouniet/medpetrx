@@ -38,7 +38,7 @@ function ItemCard({ item, category, onChange }: {
     else setEditing(false);
   };
 
-  const primaryLabel = category === "medications" ? item.drug_name : category === "vaccines" ? item.name : category === "allergies" ? item.substance_name : item.condition_name;
+  const primaryLabel = category === "medications" ? item.drug_name : category === "vaccines" ? item.name : category === "allergies" ? item.substance_name : category === "vitals" ? `Vitals - ${item.recorded_date || "Unknown date"}` : item.condition_name;
 
   return (
     <div className={`border rounded-xl p-4 ${decision === "rejected" ? "opacity-40 border-gray-200" : decision === "approved" ? "border-green-200 bg-green-50/30" : "border-blue-200 bg-blue-50/30"}`}>
@@ -50,7 +50,7 @@ function ItemCard({ item, category, onChange }: {
               {Math.round(confidence * 100)}% confident
             </span>
           </div>
-          {Object.entries(item).filter(([k]) => k !== "confidence" && k !== (category === "medications" ? "drug_name" : category === "vaccines" ? "name" : category === "allergies" ? "substance_name" : "condition_name")).map(([k, v]) => v ? (
+          {Object.entries(item).filter(([k]) => k !== "confidence" && k !== (category === "medications" ? "drug_name" : category === "vaccines" ? "name" : category === "allergies" ? "substance_name" : category === "vitals" ? "recorded_date" : "condition_name")).map(([k, v]) => v ? (
             <p key={k} className="text-xs text-gray-500 mt-0.5"><span className="capitalize">{k.replace(/_/g, " ")}</span>: {String(v)}</p>
           ) : null)}
         </div>
@@ -77,7 +77,7 @@ function ItemCard({ item, category, onChange }: {
 export default function ReviewPage() {
   const { petId, docId } = useParams();
   const router = useRouter();
-  const [decisions, setDecisions] = useState<Record<string, ReviewItem[]>>({ medications: [], vaccines: [], allergies: [], problems: [] });
+  const [decisions, setDecisions] = useState<Record<string, ReviewItem[]>>({ medications: [], vaccines: [], allergies: [], problems: [], vitals: [] });
   const [activeTab, setActiveTab] = useState("medications");
 
   const { data: doc, isLoading } = useQuery<PetDocument>({
@@ -92,6 +92,7 @@ export default function ReviewPage() {
           vaccines: (ed.vaccines || []).map((item) => ({ decision: "approved" as Decision, data: item as Record<string, unknown> })),
           allergies: (ed.allergies || []).map((item) => ({ decision: "approved" as Decision, data: item as Record<string, unknown> })),
           problems: (ed.problems || []).map((item) => ({ decision: "approved" as Decision, data: item as Record<string, unknown> })),
+          vitals: (ed.vitals || []).map((item) => ({ decision: "approved" as Decision, data: item as Record<string, unknown> })),
         });
       }
       return d;
@@ -102,8 +103,14 @@ export default function ReviewPage() {
     mutationFn: (payload: Record<string, unknown>) =>
       api.post(`/pets/${petId}/documents/${docId}/confirm`, payload).then((r) => r.data),
     onSuccess: (data) => {
-      const total = data.medications_saved + data.vaccines_saved + data.allergies_saved + data.problems_saved;
-      toast.success(`Saved ${total} records!`);
+      const total = data.medications_saved + data.vaccines_saved + data.allergies_saved + data.problems_saved + (data.vitals_saved || 0);
+      const parts = [];
+      if (data.medications_saved) parts.push(`${data.medications_saved} medications`);
+      if (data.vaccines_saved) parts.push(`${data.vaccines_saved} vaccines`);
+      if (data.vitals_saved) parts.push(`${data.vitals_saved} vitals`);
+      if (data.allergies_saved) parts.push(`${data.allergies_saved} allergies`);
+      if (data.problems_saved) parts.push(`${data.problems_saved} problems`);
+      toast.success(`Saved ${total} records: ${parts.join(", ")}!`);
       if (data.allergy_warnings?.length > 0) {
         toast.error(`⚠️ Allergy warning for: ${data.allergy_warnings[0].drug_name}`);
       }
@@ -118,6 +125,7 @@ export default function ReviewPage() {
       vaccines: decisions.vaccines.map((r) => ({ decision: r.decision, ...r.data })),
       allergies: decisions.allergies.map((r) => ({ decision: r.decision, ...r.data })),
       problems: decisions.problems.map((r) => ({ decision: r.decision, ...r.data })),
+      vitals: decisions.vitals.map((r) => ({ decision: r.decision, ...r.data })),
     };
     confirm.mutate(payload);
   };
@@ -125,7 +133,7 @@ export default function ReviewPage() {
   if (isLoading) return <div className="p-8 text-center text-gray-400">Loading extracted data...</div>;
   if (!doc?.extracted_data) return <div className="p-8 text-center text-gray-400">No extracted data available.</div>;
 
-  const tabs = ["medications", "vaccines", "allergies", "problems"];
+  const tabs = ["medications", "vaccines", "allergies", "problems", "vitals"];
   const ed = doc.extracted_data as Record<string, unknown[]>;
 
   return (

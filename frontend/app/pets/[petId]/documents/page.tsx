@@ -76,14 +76,14 @@ export default function DocumentsPage() {
           className="flex items-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
         >
           {uploading ? <Loader size={15} className="animate-spin" /> : <Upload size={15} />}
-          {uploading ? "Uploading..." : "Upload Document"}
+          {uploading ? "Uploading..." : "Import Visit Summary"}
         </button>
         <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileChange} className="hidden" />
       </div>
 
       <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-4">
         <p className="text-sm text-indigo-700">
-          <strong>Smart Record Parser:</strong> Upload a PDF, JPG, or PNG of a discharge note, prescription, lab report, or vaccine certificate. AI will automatically extract medications, vaccines, allergies, and problems for your review.
+          <strong>Import Visit Summaries:</strong> Upload a vet visit summary, discharge note, prescription, lab report, or vaccine certificate (PDF, JPG, PNG). AI will automatically extract medications, vaccines, vitals, allergies, and problems and place them in the right sections of your pet&apos;s record.
         </p>
       </div>
 
