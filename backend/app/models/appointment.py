@@ -12,6 +12,7 @@ class Appointment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     pet_id: Mapped[int] = mapped_column(Integer, ForeignKey("pets.id"), nullable=False, index=True)
+    vet_provider_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("vet_providers.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     appointment_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     clinic: Mapped[str | None] = mapped_column(String(200))
@@ -22,3 +23,4 @@ class Appointment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     pet: Mapped["Pet"] = relationship("Pet", back_populates="appointments")  # noqa: F821
+    vet_provider: Mapped["VetProvider"] = relationship("VetProvider", lazy="selectin")  # noqa: F821

@@ -1,11 +1,14 @@
 """Admin router – full CRUD for users, pets and medications."""
 
+import uuid
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_admin_user
 from app.models.medication import Medication
@@ -16,6 +19,9 @@ from app.schemas.pet import PetCreate, PetResponse, PetUpdate
 from app.schemas.user import AdminUserUpdate, UserCreate, UserResponse
 from app.services.audit_service import create_audit_log
 from app.services.auth_service import hash_password
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -232,6 +238,66 @@ async def delete_pet(
         resource_type="Pet", resource_id=pet_id,
         ip_address=request.client.host if request.client else None,
     )
+
+
+@router.post("/pets/{pet_id}/image", response_model=PetResponse)
+async def admin_upload_pet_image(
+    pet_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    pet = await db.get(Pet, pet_id)
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid image type. Allowed: JPEG, PNG, WebP, GIF")
+    content = await file.read()
+    if len(content) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="Image too large. Max 5 MB")
+
+    image_dir = Path(settings.upload_dir) / "pet_images"
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    if pet.image_url:
+        old_path = Path(settings.upload_dir) / pet.image_url.lstrip("/uploads/")
+        if old_path.exists():
+            old_path.unlink()
+
+    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    (image_dir / filename).write_bytes(content)
+
+    pet.image_url = f"/uploads/pet_images/{filename}"
+    await db.commit()
+    await db.refresh(pet)
+    await create_audit_log(
+        db, user_id=admin.id, action="ADMIN_UPLOAD_PET_IMAGE",
+        resource_type="Pet", resource_id=pet.id,
+        ip_address=request.client.host if request.client else None,
+    )
+    return PetResponse.model_validate(pet)
+
+
+@router.delete("/pets/{pet_id}/image", response_model=PetResponse)
+async def admin_delete_pet_image(
+    pet_id: int,
+    request: Request,
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    pet = await db.get(Pet, pet_id)
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+    if pet.image_url:
+        old_path = Path(settings.upload_dir) / pet.image_url.lstrip("/uploads/")
+        if old_path.exists():
+            old_path.unlink()
+    pet.image_url = None
+    await db.commit()
+    await db.refresh(pet)
+    return PetResponse.model_validate(pet)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

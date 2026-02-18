@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
@@ -48,6 +49,7 @@ from app.routers import (
     appointments,
     vitals,
     vet_providers,
+    vet_clinic_refs,
     activity_notes,
     dashboard,
     export,
@@ -57,6 +59,7 @@ from app.routers import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    Path(settings.upload_dir, "pet_images").mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -75,6 +78,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(ErrorLoggingMiddleware)
+
+# Serve uploaded files (pet images, etc.)
+app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
 @app.exception_handler(Exception)
@@ -108,6 +114,7 @@ app.include_router(common_medications.router)
 app.include_router(appointments.router)
 app.include_router(vitals.router)
 app.include_router(vet_providers.router)
+app.include_router(vet_clinic_refs.router)
 app.include_router(activity_notes.router)
 app.include_router(dashboard.router)
 app.include_router(export.router)

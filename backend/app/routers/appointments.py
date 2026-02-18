@@ -9,6 +9,7 @@ from app.dependencies import get_consented_user
 from app.models.appointment import Appointment
 from app.models.pet import Pet
 from app.models.user import User
+from app.models.vet_provider import VetProvider
 from app.routers.pets import get_pet_for_owner
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse, AppointmentUpdate
 from app.services.audit_service import create_audit_log
@@ -22,6 +23,19 @@ def _to_dt(d) -> datetime | None:
     if isinstance(d, datetime):
         return d
     return datetime.combine(d, datetime.min.time())
+
+
+async def _resolve_vet_provider(db: AsyncSession, vet_provider_id: int | None, user_id: int) -> VetProvider | None:
+    """Look up the vet provider and verify it belongs to this user."""
+    if not vet_provider_id:
+        return None
+    result = await db.execute(
+        select(VetProvider).where(VetProvider.id == vet_provider_id, VetProvider.owner_id == user_id)
+    )
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Vet provider not found")
+    return provider
 
 
 @router.get("", response_model=list[AppointmentResponse])
@@ -47,12 +61,17 @@ async def create_appointment(
     user: User = Depends(get_consented_user),
     db: AsyncSession = Depends(get_db),
 ):
+    provider = await _resolve_vet_provider(db, data.vet_provider_id, user.id)
+    clinic = data.clinic or (provider.clinic_name if provider else None)
+    veterinarian = data.veterinarian or (provider.veterinarian_name if provider else None)
+
     appt = Appointment(
         pet_id=pet_id,
+        vet_provider_id=data.vet_provider_id,
         title=data.title,
         appointment_date=_to_dt(data.appointment_date),
-        clinic=data.clinic,
-        veterinarian=data.veterinarian,
+        clinic=clinic,
+        veterinarian=veterinarian,
         reason=data.reason,
         notes=data.notes,
         status=data.status,
@@ -78,7 +97,20 @@ async def update_appointment(
     appt = result.scalar_one_or_none()
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
-    for field, value in updates.model_dump(exclude_unset=True).items():
+
+    update_data = updates.model_dump(exclude_unset=True)
+
+    # If vet_provider_id is being changed, resolve provider and auto-fill clinic/vet
+    if "vet_provider_id" in update_data:
+        provider = await _resolve_vet_provider(db, update_data["vet_provider_id"], user.id)
+        appt.vet_provider_id = update_data.pop("vet_provider_id")
+        if provider:
+            if "clinic" not in update_data:
+                appt.clinic = provider.clinic_name
+            if "veterinarian" not in update_data:
+                appt.veterinarian = provider.veterinarian_name
+
+    for field, value in update_data.items():
         if field == "appointment_date":
             value = _to_dt(value)
         setattr(appt, field, value)

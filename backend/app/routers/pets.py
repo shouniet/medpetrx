@@ -1,15 +1,21 @@
+import uuid
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_consented_user
 from app.models.pet import Pet
 from app.models.user import User
 from app.schemas.pet import PetCreate, PetResponse, PetUpdate, WeightLogAdd
 from app.services.audit_service import create_audit_log
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 router = APIRouter(prefix="/pets", tags=["pets"])
 
@@ -135,6 +141,74 @@ async def add_weight_entry(
     await db.execute(
         sa_update(Pet).where(Pet.id == pet.id).values(weight_log=existing)
     )
+    await db.commit()
+    await db.refresh(pet)
+    return PetResponse.model_validate(pet)
+
+
+@router.post("/{pet_id}/image", response_model=PetResponse)
+async def upload_pet_image(
+    request: Request,
+    file: UploadFile = File(...),
+    pet: Pet = Depends(get_pet_for_owner),
+    user: User = Depends(get_consented_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid image type. Allowed: JPEG, PNG, WebP, GIF",
+        )
+    content = await file.read()
+    if len(content) > MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image too large. Max 5 MB",
+        )
+
+    # Create pet_images directory
+    image_dir = Path(settings.upload_dir) / "pet_images"
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    # Delete old image if exists
+    if pet.image_url:
+        old_path = Path(settings.upload_dir) / pet.image_url.lstrip("/uploads/")
+        if old_path.exists():
+            old_path.unlink()
+
+    # Save new image with unique name
+    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = image_dir / filename
+    filepath.write_bytes(content)
+
+    pet.image_url = f"/uploads/pet_images/{filename}"
+    await db.commit()
+    await db.refresh(pet)
+
+    await create_audit_log(
+        db,
+        user_id=user.id,
+        action="UPLOAD_PET_IMAGE",
+        resource_type="Pet",
+        resource_id=pet.id,
+        ip_address=request.client.host if request.client else None,
+    )
+    return PetResponse.model_validate(pet)
+
+
+@router.delete("/{pet_id}/image", response_model=PetResponse)
+async def delete_pet_image(
+    request: Request,
+    pet: Pet = Depends(get_pet_for_owner),
+    user: User = Depends(get_consented_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if pet.image_url:
+        old_path = Path(settings.upload_dir) / pet.image_url.lstrip("/uploads/")
+        if old_path.exists():
+            old_path.unlink()
+    pet.image_url = None
     await db.commit()
     await db.refresh(pet)
     return PetResponse.model_validate(pet)

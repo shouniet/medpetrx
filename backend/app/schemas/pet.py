@@ -26,6 +26,7 @@ class PetUpdate(BaseModel):
     sex: str | None = None
     microchip_num: str | None = None
     insurance: str | None = None
+    image_url: str | None = None
 
 
 class WeightLogAdd(BaseModel):
@@ -44,6 +45,7 @@ class PetResponse(BaseModel):
     weight_log: list | None
     microchip_num: str | None
     insurance: str | None
+    image_url: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

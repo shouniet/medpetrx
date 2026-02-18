@@ -19,6 +19,7 @@ class Pet(Base):
     weight_log: Mapped[list | None] = mapped_column(JSON)  # [{date, weight_kg}, ...]
     microchip_num: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
     insurance: Mapped[str | None] = mapped_column(String(200))
+    image_url: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     owner: Mapped["User"] = relationship("User", back_populates="pets")  # noqa: F821
